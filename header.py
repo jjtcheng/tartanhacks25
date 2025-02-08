@@ -1,28 +1,14 @@
 from dataclasses import dataclass
-from typing import List
-import pandas as pd
-import xrpl
 from xrpl.wallet import Wallet
+from typing import List
 
 @dataclass
 class EggBatch:
     batch_id: str
     farm_id: str
-    production_date: str
-    expiration_date: str
     quantity: int
+    production_date: str
     quality_grade: str
-
-@dataclass
-class TransportEvent:
-    transport_id: str
-    batch_id: str
-    start_location: str
-    end_location: str
-    start_time: str
-    end_time: str
-    start_eggs: int
-    end_eggs: int
 
 @dataclass
 class SaleEvent:
@@ -33,12 +19,8 @@ class SaleEvent:
     start_eggs: int
     start_location: str
     end_location: str
-
-@dataclass
-class CheckEvent:
-    check_id: str
-    eggs: int
-    time: str
+    seller: str
+    buyer: str
 
 @dataclass
 class UserType:
@@ -47,153 +29,182 @@ class UserType:
     RETAILER = 3
 
 class EggSupplyChain:
-    """
-    EggSupplyChain class manages the supply chain of eggs using blockchain technology.
-    """
-
-    def __init__(self):
+    def __init__(self,broker=None):
+        """
+        Initialize the EggSupplyChain class.
+        
+        Args:
+            broker: Optional broker parameter.
+        """
         pass
 
-    def add_user(self, user: Wallet, type: str, name: str, location: str) -> None:
+    def new_user(self, type: int, name: str, longitude: str, latitude: str) -> str:
+        """
+        Add a new user to the supply chain.
+        
+        Args:
+            type (int): Type of user in the supply chain.
+            name (str): Name of the user.
+            longitude (str): Longitude of the user's location.
+            latitude (str): Latitude of the user's location.
+        
+        Returns:
+            str: Classic address of the new user.
+        """
+        # Implementation to add a new user and return their classic address
+        pass
+
+    def add_user(self, user: Wallet, type: int, name: str, longitude: str, latitude: str) -> str:
         """
         Add a user to the supply chain.
-
+        
         Args:
-            user (Wallet): User's wallet containing their address.
-            type (str): Type of user in the supply chain (e.g., farmer, distributor, retailer).
+            user (Wallet): Wallet of the user.
+            type (int): Type of user in the supply chain.
             name (str): Name of the user.
-            location (str): Location of the user.
+            longitude (str): Longitude of the user's location.
+            latitude (str): Latitude of the user's location.
+        
+        Returns:
+            str: Classic address of the added user.
         """
+        # Implementation to add a user and return their classic address
         pass
-
-    def remove_user(self, user: Wallet) -> None:
+    
+    def remove_user(self, user: Wallet):
         """
         Remove a user from the supply chain.
-
+        
         Args:
-            user (Wallet): The wallet of the user to be removed.
+            user (Wallet): Wallet of the user to be removed.
         """
         pass
 
     def get_users(self) -> List[Wallet]:
         """
         Retrieve all users in the supply chain.
-
+        
         Returns:
-            List[Wallet]: A list of wallets representing the users.
+            List[Wallet]: List of all user wallets.
         """
         pass
-
+    
     def create_metadata_uri(self, batch: EggBatch) -> str:
         """
         Convert batch data to URI format and upload to IPFS.
-
+        
         Args:
-            batch (EggBatch): The batch of eggs to be converted to metadata URI.
-
+            batch (EggBatch): Batch of eggs.
+        
         Returns:
-            str: The URI of the uploaded metadata.
+            str: Metadata URI in JSON format.
         """
         pass
 
     def create_nft(self, wallet: Wallet, batch: EggBatch) -> dict:
         """
         Mint an NFT representing an egg batch.
-
+        
         Args:
-            wallet (Wallet): The wallet of the user creating the NFT.
-            batch (EggBatch): The batch of eggs to be represented by the NFT.
-
+            wallet (Wallet): Wallet of the user minting the NFT.
+            batch (EggBatch): Batch of eggs.
+        
         Returns:
-            dict: The details of the minted NFT.
+            dict: Result of the NFT minting transaction.
         """
         pass
     
-
-    def get_metadata_from_transaction(self, transaction) -> dict:
-        """
-        Retrieve metadata from a transaction.
-
-        Args:
-            transaction: The transaction from which to retrieve metadata.
-
-        Returns:
-            dict: The metadata retrieved from the transaction.
-        """
-        pass
-
-    def make_sell_offer(self, wallet: Wallet, token_id: str, price: float) -> dict:
+    def make_sell_offer(self, wallet: Wallet, token_id: str, price: int) -> dict:
         """
         Create a sell offer for an NFT.
-
+        
         Args:
-            wallet (Wallet): The wallet of the user making the sell offer.
-            token_id (str): The ID of the token to be sold.
-            price (float): The price at which to sell the NFT.
-
+            wallet (Wallet): Wallet of the user creating the sell offer.
+            token_id (str): ID of the NFT.
+            price (int): Price of the NFT.
+        
         Returns:
-            dict: The details of the created sell offer.
+            dict: Result of the sell offer transaction.
         """
         pass
-
-    def make_buy_offer(self, wallet: Wallet, token_id: str, price: float) -> dict:
+    
+    def make_buy_offer(self, wallet: Wallet, token_id: str, price: int) -> dict:
         """
         Create a buy offer for an NFT.
-
+        
         Args:
-            wallet (Wallet): The wallet of the user making the buy offer.
-            token_id (str): The ID of the token to be bought.
-            price (float): The price at which to buy the NFT.
-
+            wallet (Wallet): Wallet of the user creating the buy offer.
+            token_id (str): ID of the NFT.
+            price (int): Price of the NFT.
+        
         Returns:
-            dict: The details of the created buy offer.
+            dict: Result of the buy offer transaction.
         """
         pass
 
-    def sell_nft(self, wallet: Wallet, buy_offer_index: int, buyer: Wallet) -> dict:
+    def accept_buy_offer(self, buyer_wallet: Wallet, seller_wallet: Wallet, number: int, buy_offer_index: int, price: int, batch_id: str) -> dict:
         """
-        Sell an NFT with an existing buy offer.
-
+        Accept an existing buy offer.
+        
         Args:
-            wallet (Wallet): The wallet of the user selling the NFT.
-            buy_offer_index (int): The index of the buy offer to accept.
-            buyer (Wallet): The wallet of the buyer.
-
+            buyer_wallet (Wallet): Wallet of the buyer.
+            seller_wallet (Wallet): Wallet of the seller.
+            number (int): Number of NFTs.
+            buy_offer_index (int): Index of the buy offer.
+            price (int): Price of the NFT.
+            batch_id (str): ID of the egg batch.
+        
         Returns:
-            dict: The details of the completed sale.
+            dict: Result of the accept buy offer transaction.
         """
         pass
-    def buy_nft(self, wallet: Wallet, sell_offer_index: int, seller: Wallet) -> dict:
+    
+    def accept_sell_offer(self, buyer_wallet: Wallet, seller_wallet: Wallet, number: int, sell_offer_index: int, price: int, batch_id: str) -> dict:
         """
-        Buy an NFT with an existing sell offer.
-
+        Accept an existing sell offer.
+        
         Args:
-            wallet (Wallet): The wallet of the user buying the NFT.
-            sell_offer_index (int): The index of the sell offer to accept.
-            seller (Wallet): The wallet of the seller.
-
+            buyer_wallet (Wallet): Wallet of the buyer.
+            seller_wallet (Wallet): Wallet of the seller.
+            number (int): Number of NFTs.
+            sell_offer_index (int): Index of the sell offer.
+            price (int): Price of the NFT.
+            batch_id (str): ID of the egg batch.
+        
         Returns:
-            dict: The details of the completed purchase.
+            dict: Result of the accept sell offer transaction.
+        """
+        pass
+
+    def get_metadata_from_transaction(self, transaction):
+        """
+        Retrieve metadata from a transaction.
+        
+        Args:
+            transaction: Transaction object.
+        
+        Returns:
+            dict: Metadata in JSON format.
         """
         pass
 
     def get_account_transactions(self, wallet_address: str) -> list:
         """
-        Retrieve NFTs via the standard account_nfts method.
-
+        Retrieve transactions for a specific account.
+        
         Args:
-            wallet_address (str): The address of the wallet to retrieve transactions for.
-
+            wallet_address (str): Wallet address of the account.
+        
         Returns:
-            list: A list of transactions associated with the wallet.
+            list: List of transactions.
         """
         pass
-
-    def get_all_account_transactions(self) -> list:
+    
+    def get_all_account_transactions(self):
         """
-        Retrieve all NFTs via the standard account_nfts method.
-
+        Retrieve all transactions for all accounts.
+        
         Returns:
-            list: A list of all transactions.
+            list: List of all transactions.
         """
         pass
