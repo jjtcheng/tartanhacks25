@@ -317,16 +317,17 @@ elif st.session_state.role == get_user_type('Distributor'):
     st.header("📦 Distributor Portal")
     
     tab1, tab2, tab3 = st.tabs(["🛒 Available Batches", "📊 Manage Inventory","📈 Analyze the Chain"])
-    
-    for nft in  st.session_state.batches:
+    available_batches = []
+    print(supplyChain.egg_batches.keys())
+    for nft in  supplyChain.egg_batches.keys():
         batch = supplyChain.egg_batches[nft]
         owner = batch['owner']
         if owner != st.session_state.wallet and df2[df2['wallet'] == owner].iloc[0]['type'] == 1:
-            st.session_state.FarmerSell.append(batch)
-            with st.expander(f"Batch {batch["farm_id"]} has {batch["quantity"]} eggs"):
+            available_batches.append(batch)
+            with st.expander(f"Batch {batch["batch_id"]} has {batch["quantity"]} eggs"):
                 cols = st.columns([3,1,2])
-                cols[0].write(f"**Farm of origin:** {batch["farm_id"]}")
-                cols[1].number_input("Purchase Qty", key=f"qty_{batch[batch_id]}", 
+                cols[0].write(f"**Farm of origin:** {batch["batch_id"]}")
+                cols[1].number_input("Purchase Qty", key=f"qty_{batch["batch_id"]}", 
                                     min_value=1, max_value=batch['quantity'])
                 if cols[2].button("Acquire Batch", key=f"buy_{batch['batch_id']}"):
                     #TODO: Update ownership logic

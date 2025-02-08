@@ -51,7 +51,8 @@ class EggSupplyChain:
         self.client = xrpl.clients.JsonRpcClient("https://s.altnet.rippletest.net:51234")
 
         # HACK
-        self.egg_batches = dict() # nft_token_id: egg batch data + transports if any as list of (seller, buyer, iso time) 
+        self.egg_batches = json.load(open("egg_batches.json"))
+
         try:
             with open("address_to_wallet.json", "r") as f:
                 data = json.load(f)
@@ -151,12 +152,13 @@ class EggSupplyChain:
             "sell_offer_id": None, 
             "transports": []
         }
+        json.dump(self.egg_batches, open("egg_batches.json", "w"))
 
         # Now sell it
         sell_offer_response = self.make_sell_offer(wallet, nftoken_id, 0)
         sell_offer_id = sell_offer_response['meta']['offer_id']
         self.egg_batches[nftoken_id]["sell_offer_id"] = sell_offer_id
-
+        json.dump(self.egg_batches, open("egg_batches.json", "w"))
         return (nftoken_id, sell_offer_response)
 
 
@@ -238,6 +240,7 @@ class EggSupplyChain:
         
         self.egg_batches[batch_id]["owner"]= buyer_wallet
         self.egg_batches[batch_id]["sell_offer_index"]= ind
+        json.dump(self.egg_batches, open("egg_batches.json", "w"))
         self.users.loc[self.users["wallet"] == seller_wallet, "token"] = self.users.loc[self.users["wallet"] == seller_wallet, "token"].values[0].replace(batch_id, "")
         self.users.loc[self.users["wallet"] == buyer_wallet, "token"] = self.users.loc[self.users["wallet"] == buyer_wallet, "token"].values[0] + ";" + batch_id
         self.users.to_csv("users.csv", index=False)
