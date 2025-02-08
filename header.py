@@ -108,20 +108,7 @@ class EggSupplyChain:
             dict: The details of the minted NFT.
         """
         pass
-
-    def record_transport(self, wallet: Wallet, transport: TransportEvent, token_id: str) -> dict:
-        """
-        Record a transport event as a payment transaction with a memo.
-
-        Args:
-            wallet (Wallet): The wallet of the user recording the transport event.
-            transport (TransportEvent): The transport event details.
-            token_id (str): The ID of the token being transported.
-
-        Returns:
-            dict: The details of the recorded transport event.
-        """
-        pass
+    
 
     def get_metadata_from_transaction(self, transaction) -> dict:
         """
