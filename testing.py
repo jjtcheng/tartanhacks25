@@ -18,15 +18,14 @@ supply_chain = EggSupplyChain()
 
 test_wallet = generate_faucet_wallet(supply_chain.client, debug=True)
 test_wallet2 = generate_faucet_wallet(supply_chain.client, debug=True)
+test_wallet3 = generate_faucet_wallet(supply_chain.client, debug=True)
 # test_wallet3 = generate_faucet_wallet(supply_chain.client, debug=True)
 supply_chain.add_user(test_wallet, 1, "Farm Fresh Eggs", "37.419489", "-86.302414") 
 supply_chain.add_user(test_wallet2, 2, "Big Egg Sender", "87.419489", "-36.302414")
+supply_chain.add_user(test_wallet2, 3, "Giant Eagle Retailer", "87.419489", "-36.302414")
 # supply_chain.add_user(test_wallet3, 3, "Big Egg Receiver", "57.419489; -106.302414")
 
 
-
-
-print(supply_chain.users)
 
 
 # Create an NFT egg
@@ -37,28 +36,26 @@ test_batch = EggBatch(
     quantity=100,
     quality_grade="A",
 )
-test_nft = supply_chain.create_nft(test_wallet, test_batch)
-test_nft_token_id = get_nftoken_id(test_nft.get("meta"))
+test_nft = supply_chain.create_and_sell_nft(test_wallet, test_batch)
+# test_nft_token_id = get_nftoken_id(test_nft.get("meta"))
 
 
 print(supply_chain.egg_batches)
 
-print("===============================")
-
-# print(supply_chain.get_all_account_transactions())
+print(test_nft)
 
 
-# Create a sale offer for nft
+
+
+exit()
 
 print("===============================")
 
 info = supply_chain.make_sell_offer(test_wallet, test_nft_token_id, 0)
 sell_offer_id =info['meta']['offer_id']
 print(info)
-print()
 hash = info.get("hash")
 print("===============================")
-print("hash", hash)
 print("offer_id", sell_offer_id)
 print("===============================")
 
@@ -69,11 +66,17 @@ print("====")
 
 print(supply_chain.egg_batches)
 
-print("====")
 
 
-# print(supply_chain.get_account_transactions(test_wallet2.classic_address))
+print("!!!!!!!!!!!!!!!!!!!!!!!!!")
+info = supply_chain.make_sell_offer(test_wallet2, test_nft_token_id, 0)
+sell_offer_id =info['meta']['offer_id']
+print(supply_chain.accept_sell_offer(test_wallet3,test_wallet2,100,sell_offer_id,100,test_nft_token_id))
 
-print("====")
+
+# print(supply_chain.)
+
+
+
 
 # supply_chain.get_all_account_transactions()

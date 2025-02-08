@@ -36,16 +36,13 @@ class UserType:
     RETAILER = 3
 
 class EggSupplyChain:
-    def __init__(self,broker=None):
+    def __init__(self):
         self.users = pd.read_csv("users.csv") # !!! TODO: need their WALLETS
-        self.users = self.users.iloc[0:0]
-        self.users.columns = ["wallet", "type", "name", "longitude", "latitude"]
-        self.users.to_csv("users.csv", index=False)
-        # self.wallets = self.users["wallet"].tolist() 
+        # self.users = self.users.iloc[0:0]
+        # self.users.to_csv("users.csv", index=False)
         self.trades = pd.read_csv("transactions.csv")
-        self.trades = self.trades.iloc[0:0]
-        self.trades.columns = ["from", "to", "amount"]
-        self.trades.to_csv("transactions.csv", index=False)
+        # self.trades = self.trades.iloc[0:0]
+        # self.trades.to_csv("transactions.csv", index=False)
         for i in range(len(self.trades)):
             if self.trades["from"][i] not in self.users["wallet"]:
                 return f"Unauthorized user {self.trades["from"][i]} made trade"
@@ -54,10 +51,22 @@ class EggSupplyChain:
         self.client = xrpl.clients.JsonRpcClient("https://s.altnet.rippletest.net:51234")
 
         # HACK
-        self.egg_batches = dict()
-        self.wallet_to_user = {wallet.classic_address: user for (wallet, user) in zip(self.users["wallet"].tolist(), self.users)}
+        self.egg_batches = dict() # nft_token_id: egg batch data + transports if any as list of (seller, buyer, iso time) 
+        try:
+            with open("address_to_wallet.json", "r") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            data = {}
+        self.address_to_wallet = {}
+        for addr, creds in data.items():
+            self.address_to_wallet[addr] = Wallet(
+                seed=creds["seed"],
+                public_key=creds["public_key"],
+                private_key=creds["private_key"],
+            )
+        # self.address_to_wallet = {} # wallet.classic_address : wallet
 
-    def new_user (self, type: int, name: str, longitude: str, latitude: str) -> None:
+    def new_user (self, type: int, name: str, longitude: str, latitude: str):
         """Add a user to the supply chain.
         
         Args:
@@ -66,8 +75,8 @@ class EggSupplyChain:
             location (str): Location of the user
         """
         user = generate_faucet_wallet(self.client, debug=True)
-        return self.add_user(user, type, name, longitude, latitude)
-    def add_user(self, user: Wallet, type: int, name: str, longitude: str, latitude: str) -> None:
+        return (user, self.add_user(user, type, name, longitude, latitude))
+    def add_user(self, user: Wallet, type: int, name: str, longitude: str, latitude: str):
         user_data = pd.DataFrame(
             [[user.classic_address, type, name, longitude, latitude]], 
             columns=self.users.columns
@@ -75,7 +84,18 @@ class EggSupplyChain:
         self.users = pd.concat([self.users, user_data], ignore_index=True)
         self.users.to_csv("users.csv", index=False)
 
-        self.wallet_to_user[user.classic_address] = user_data
+        self.address_to_wallet[user.classic_address] = user
+        json.dump(
+            {
+                addr: {
+                    "seed": wallet.seed,
+                    "public_key": wallet.public_key,
+                    "private_key": wallet.private_key,
+                }
+                for addr, wallet in self.address_to_wallet.items()
+            },
+            open("address_to_wallet.json", "w"),
+        )
 
         return user.classic_address
         
@@ -93,7 +113,6 @@ class EggSupplyChain:
     
         metadata = {
             "batch_id": batch.batch_id,
-            "farm_id": batch.farm_id,
             "production_date": batch.production_date,
             "quantity": batch.quantity,
             "quality_grade": batch.quality_grade,
@@ -101,18 +120,18 @@ class EggSupplyChain:
         metadata_json = json.dumps(metadata)
         return metadata_json
 
-    
-    def create_nft(self, wallet: Wallet, batch: EggBatch) -> dict:
+
+    def create_and_sell_nft(self, wallet, batch:EggBatch) -> dict:
         """Mint an NFT representing an egg batch"""
-        user_record = self.users[self.users["wallet"] == wallet.classic_address]
-        if user_record.empty or user_record.iloc[0]["type"] != UserType.FARMER:
-            raise PermissionError("Only farmers can mint NFTs")
+        # user_record = self.users[self.users["wallet"] == wallet]
+        # if user_record.empty or user_record.iloc[0]["type"] != UserType.FARMER:
+        #     raise PermissionError("Only farmers can mint NFTs")
         # Convert batch data to URI-compatible format
         batch_uri = self.create_metadata_uri(batch).encode("utf-8").hex()
-        
+        true_wallet = self.address_to_wallet[wallet]
         # Create NFT with batch data
         mint_tx = NFTokenMint(
-            account=wallet.classic_address,
+            account=wallet,
             uri=batch_uri,
             flags=8,  # transferable
             transfer_fee=0,
@@ -120,35 +139,123 @@ class EggSupplyChain:
         )
         
         # Sign and submit transaction
-        response = xrpl.transaction.submit_and_wait(mint_tx, self.client, wallet)
-        
-        
-        # HACK Add to egg batch store
+        response = xrpl.transaction.submit_and_wait(mint_tx, self.client,true_wallet)
         result = response.result
         nftoken_id = get_nftoken_id(result.get("meta"))
         self.egg_batches[nftoken_id] = {
             "batch_id": batch.batch_id,
-            "farm_id": batch.farm_id,
             "production_date": batch.production_date,
             "quantity": batch.quantity,
             "quality_grade": batch.quality_grade,
+            "owner": wallet,
+            "sell_offer_id": None, 
             "transports": []
         }
 
-        return result
+        # Now sell it
+        sell_offer_response = self.make_sell_offer(wallet, nftoken_id, 0)
+        sell_offer_id = sell_offer_response['meta']['offer_id']
+        self.egg_batches[nftoken_id]["sell_offer_id"] = sell_offer_id
+
+        return (nftoken_id, sell_offer_response)
+
+
+
     
-    def make_sell_offer(self, wallet: Wallet, token_id: str, price: int) -> dict:
+    # def create_nft(self, wallet: Wallet, batch: EggBatch) -> dict:
+    #     """Mint an NFT representing an egg batch"""
+    #     user_record = self.users[self.users["wallet"] == wallet.classic_address]
+    #     if user_record.empty or user_record.iloc[0]["type"] != UserType.FARMER:
+    #         raise PermissionError("Only farmers can mint NFTs")
+    #     # Convert batch data to URI-compatible format
+    #     batch_uri = self.create_metadata_uri(batch).encode("utf-8").hex()
+        
+    #     # Create NFT with batch data
+    #     mint_tx = NFTokenMint(
+    #         account=wallet.classic_address,
+    #         uri=batch_uri,
+    #         flags=8,  # transferable
+    #         transfer_fee=0,
+    #         nftoken_taxon=1
+    #     )
+        
+    #     # Sign and submit transaction
+    #     response = xrpl.transaction.submit_and_wait(mint_tx, self.client, wallet)
+    #     sell_offer = self.make_sell_offer(wallet, nftoken_id, 0)
+    #     ind = sell_offer['meta']['offer_id']
+        
+    #     # HACK Add to egg batch store
+    #     result = response.result
+    #     nftoken_id = get_nftoken_id(result.get("meta"))
+    #     self.egg_batches[nftoken_id] = {
+    #         "batch_id": batch.batch_id,
+    #         "production_date": batch.production_date,
+    #         "quantity": batch.quantity,
+    #         "quality_grade": batch.qusality_grade,
+    #         # "owner" : wallet.classic_address,
+    #         # "sell_offer_index" : ind,
+    #         "transports": []
+    #     }
+        
+    #     return result
+    
+    def make_sell_offer(self, wallet, token_id: str, price: int) -> dict:
         """Create a sell offer for an NFT"""
         sell_offer = xrpl.models.transactions.NFTokenCreateOffer(
-            account=wallet.classic_address,
+            account=wallet,
             nftoken_id=token_id,
             amount=str(price),
             flags=xrpl.models.transactions.NFTokenCreateOfferFlag.TF_SELL_NFTOKEN
         )
-        
-        response = xrpl.transaction.submit_and_wait(sell_offer, self.client, wallet)
+        true_wallet = self.address_to_wallet[wallet]
+        response = xrpl.transaction.submit_and_wait(sell_offer, self.client, true_wallet)
         
         return response.result
+    
+    def accept_sell_offer(self, buyer_wallet, seller_wallet, number:int, sell_offer_index: int, price: int, batch_id: str) -> dict:
+        """Accept an existing sell offer"""
+
+        buy_offfer =  xrpl.models.transactions.NFTokenCreateOffer(
+            account=buyer_wallet,
+            nftoken_id=batch_id,
+            amount=str(price),
+            owner = seller_wallet.classic_address,
+            flags=0
+        )
+        true_buyer_wallet = self.address_to_wallet[buyer_wallet]    
+        response = xrpl.transaction.submit_and_wait(buy_offfer, self.client, true_buyer_wallet)
+        buy_offer_index = response.result.get("offer_index")
+        accept_offer_tx=xrpl.models.transactions.NFTokenAcceptOffer(
+            account=buyer_wallet,
+            nftoken_sell_offer=sell_offer_index,
+            nftoken_buy_offer=buy_offer_index,
+        )
+        transaction = pd.DataFrame([[seller_wallet, buyer_wallet, price]], columns=self.trades.columns)
+        self.trades = pd.concat([self.trades, transaction], ignore_index=True)
+        self.trades.to_csv("transactions.csv", index=False)
+        sell = self.make_sell_offer(buyer_wallet, batch_id, 0)
+        ind = sell['meta']['offer_id']
+        
+        self.egg_batches[batch_id]["owner"]= buyer_wallet
+        self.egg_batches[batch_id]["sell_offer_index"]= ind
+        self.users.loc[self.users["wallet"] == seller_wallet, "token"] = self.users.loc[self.users["wallet"] == seller_wallet, "token"].values[0].replace(batch_id, "")
+        self.users.loc[self.users["wallet"] == buyer_wallet, "token"] = self.users.loc[self.users["wallet"] == buyer_wallet, "token"].values[0] + ";" + batch_id
+        self.users.to_csv("users.csv", index=False)
+
+
+        try:
+            response=xrpl.transaction.submit_and_wait(accept_offer_tx,self.client,true_buyer_wallet)
+            result = response.result
+
+            # HACK Add transaction info
+            # (seller info, buyer info, timestamp)
+            self.egg_batches[batch_id]["transports"].append((seller_wallet, buyer_wallet, result['close_time_iso']))
+        
+            return result
+        except xrpl.transaction.XRPLReliableSubmissionException as e:
+            reply=f"Submit failed: {e}"
+            return reply
+
     
     def make_buy_offer(self, wallet: Wallet, token_id: str, price: int) -> dict:
         """Create a buy offer for an NFT"""
@@ -181,6 +288,7 @@ class EggSupplyChain:
         transaction = pd.DataFrame([[buyer_wallet.classic_address, seller_wallet.classic_address, price]], columns=self.trades.columns)
         self.trades = pd.concat([self.trades, transaction], ignore_index=True)
         self.trades.to_csv("transactions.csv", index=False)
+        self.make_sell_offer(buyer_wallet, batch_id, 0)
         try:
             response=xrpl.transaction.submit_and_wait(accept_offer_tx,self.client,seller_wallet)
             result = response.result
@@ -188,39 +296,8 @@ class EggSupplyChain:
         except xrpl.transaction.XRPLReliableSubmissionException as e:
             reply=f"Submit failed: {e}"
             return reply
-    
-    def accept_sell_offer(self, buyer_wallet: Wallet, seller_wallet:Wallet, number:int, sell_offer_index: int, price: int, batch_id: str) -> dict:
-        """Accept an existing sell offer"""
-
-        buy_offfer =  xrpl.models.transactions.NFTokenCreateOffer(
-            account=buyer_wallet.classic_address,
-            nftoken_id=batch_id,
-            amount=str(price),
-            owner = seller_wallet.classic_address,
-            flags=0
-        )
-        response = xrpl.transaction.submit_and_wait(buy_offfer, self.client, buyer_wallet)
-        buy_offer_index = response.result.get("offer_index")
-        accept_offer_tx=xrpl.models.transactions.NFTokenAcceptOffer(
-            account=buyer_wallet.classic_address,
-            nftoken_sell_offer=sell_offer_index,
-            nftoken_buy_offer=buy_offer_index,
-        )
-        transaction = pd.DataFrame([[seller_wallet.classic_address, buyer_wallet.classic_address, price]], columns=self.trades.columns)
-        self.trades = pd.concat([self.trades, transaction], ignore_index=True)
-        self.trades.to_csv("transactions.csv", index=False)
-        try:
-            response=xrpl.transaction.submit_and_wait(accept_offer_tx,self.client,buyer_wallet)
-            result = response.result
-
-            # HACK Add transaction info
-            # (seller info, buyer info)
-            self.egg_batches[batch_id]["transports"].append((self.wallet_to_user[seller_wallet.classic_address], self.wallet_to_user[buyer_wallet.classic_address]))
         
-            return result
-        except xrpl.transaction.XRPLReliableSubmissionException as e:
-            reply=f"Submit failed: {e}"
-            return reply
+    
     def get_metadata_from_transaction(self, transaction):
         """Retrieve metadata from transaction"""
         uri = transaction.get("tx_json").get("URI")
