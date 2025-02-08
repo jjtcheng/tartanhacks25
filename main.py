@@ -1,2 +1,0 @@
-
-print("I love eggs")
