@@ -4,6 +4,7 @@ import json
 from typing import List, Dict
 import xrpl
 from xrpl.models.transactions import NFTokenMint, Payment
+from xrpl.models.requests import from_dict, AccountTx
 from xrpl.wallet import Wallet, generate_faucet_wallet
 import tkinter as tk
 from tutorial.mod1 import get_account, get_account_info, send_xrp
@@ -14,6 +15,9 @@ from tutorial.mod5 import broker_sale
 from tutorial.mod10 import send_check, cash_check, cancel_check, get_checks
 import pandas as pd
 import requests
+from xrpl.utils import get_nftoken_id, hex_to_str
+
+
 
 @dataclass
 class EggBatch:
@@ -33,9 +37,36 @@ class TransportEvent:
     end_time: str
     start_eggs: int
     end_eggs: int
+
+
+@dataclass
+class SaleEvent:
+    sale_id: str
+    batch_id: str
+    price: float
+    quantity: int
+    start_eggs: int
+    start_location: str
+    end_location: str
+    seller: str
+    buyer: str
+
+@dataclass
+class CheckEvent:
+    check_id: str
+    eggs: int
+    time: str
+    checker: str
+
+@dataclass
+class UserType:
+    FARMER = 1
+    DISTRIBUTOR = 2
+    RETAILER = 3
 class EggSupplyChain:
     def __init__(self):
-        self.users = pd.read_csv("users.csv")
+        self.users = pd.read_csv("users.csv") # !!! TODO: need their WALLETS
+        wallets = self.users["wallet"].tolist() 
         self.trades = pd.read_csv("transactions.csv")
         for i in range(len(self.trades)):
             if self.trades["from"][i] not in self.users["wallet"]:
@@ -93,7 +124,7 @@ class EggSupplyChain:
     def create_nft(self,wallet: Wallet, batch: EggBatch) -> dict:
         """Mint an NFT representing an egg batch"""
         user_record = self.users[self.users["wallet"] == wallet.classic_address]
-        if user_record.empty or user_record.iloc[0]["type"].lower() != "farmer":
+        if user_record.empty or user_record.iloc[0]["type"] != UserType.FARMER:
             raise PermissionError("Only farmers can mint NFTs")
         # Convert batch data to URI-compatible format
         batch_uri = self.create_metadata_uri(batch).encode("utf-8").hex()
@@ -112,71 +143,177 @@ class EggSupplyChain:
         
         return response.result
     
-    def record_transport(self, wallet: Wallet, transport: TransportEvent, token_id) -> dict:
-        """Record a transport event as a payment transaction with memo"""
-        # Create memo data
+    # def record_transport(self, wallet: Wallet, transport: TransportEvent, token_id) -> dict:
+    #     """Record a transport event as a payment transaction with memo"""
+    #     # Create memo data
         
+    #     memo_data = {
+    #         "type": "transport / self_sale",
+    #         "transport_id": transport.transport_id,
+    #         "batch_id": transport.batch_id,
+    #         "start_location": transport.start_location,
+    #         "end_location": transport.end_location,
+    #         "start_time": transport.start_time,
+    #         "end_time": transport.end_time,
+    #     }
+    #     sell_offer = xrpl.models.transactions.NFTokenCreateOffer(
+    #         account=wallet.classic_address,
+    #         nftoken_id=token_id,
+    #         amount=0,
+    #         flags=xrpl.models.transactions.NFTokenCreateOfferFlag.TF_SELL_NFTOKEN,
+    #         destination=wallet.classic_address,  # Sell to self
+    #         memos=[{"Memo": {"MemoData": json.dumps(memo_data)}}]
+    #     ) 
+    #     # Create payment transaction with memo
+    #     payment = Payment(
+    #         account=wallet.classic_address,
+    #         destination=wallet.classic_address,
+    #         amount="1",  # Minimal amount
+    #         memos=[{"Memo": {"MemoData": json.dumps(memo_data)}}]
+    #     )
+        
+    #     # Submit sell offer
+    #     offer_response = xrpl.transaction.submit_and_wait(sell_offer, self.client, wallet)
+
+    #     # Accept the offer
+    #     accept_tx = xrpl.models.transactions.NFTokenAcceptOffer(
+    #         account=wallet.classic_address,
+    #         nftoken_sell_offer=offer_response.result.get("nft_offer_index")
+    #     )
+    
+    #     accept_response = xrpl.transaction.submit_and_wait(accept_tx, self.client, wallet)
+
+    #     return {
+    #         "transport_id": transport.transport_id,
+    #         "sell_tx_hash": offer_response.result.get("hash"),
+    #         "buy_tx_hash": accept_response.result.get("hash"),
+    #         "nft_id": token_id,
+    #         "price_xrp": 0,
+    #         "status": accept_response.status
+    #     }
+    def record_sale(self, wallet: Wallet, sale: SaleEvent, token_id) -> dict:
+        """Record a sale event as a payment transaction with memo"""
+        # Create memo data
         memo_data = {
-            "type": "transport / self_sale",
-            "transport_id": transport.transport_id,
-            "batch_id": transport.batch_id,
-            "start_location": transport.start_location,
-            "end_location": transport.end_location,
-            "start_time": transport.start_time,
-            "end_time": transport.end_time,
+            "type": "sale",
+            "sale_id": sale.sale_id,
+            "batch_id": sale.batch_id,
+            "price": sale.price,
+            "quantity": sale.quantity,
+            "start_eggs": sale.start_eggs,
+            "start_location": sale.start_location,
+            "end_location": sale.end_location,
         }
-        sell_offer = xrpl.models.transactions.NFTokenCreateOffer(
-        account=wallet.classic_address,
-        nftoken_id=token_id,
-        amount=0,
-        flags=xrpl.models.transactions.NFTokenCreateOfferFlag.TF_SELL_NFTOKEN,
-        destination=wallet.classic_address,  # Sell to self
-        memos=[{"Memo": {"MemoData": json.dumps(memo_data)}}]) 
+        
         # Create payment transaction with memo
         payment = Payment(
             account=wallet.classic_address,
             destination=wallet.classic_address,
-            amount="1",  # Minimal amount
+            amount=str(int(sale.price * 1000000)),  # Convert price to drops
             memos=[{"Memo": {"MemoData": json.dumps(memo_data)}}]
         )
         
-        # Submit sell offer
-        offer_response = xrpl.transaction.submit_and_wait(sell_offer, self.client, wallet)
-
-        # Accept the offer
-        accept_tx = xrpl.models.transactions.NFTokenAcceptOffer(
-        account=wallet.classic_address,
-        nftoken_sell_offer=offer_response.result.get("nft_offer_index")
-    )
-    
-        accept_response = xrpl.transaction.submit_and_wait(accept_tx, self.client, wallet)
-
+        # Submit payment transaction
+        response = xrpl.transaction.submit_and_wait(payment, self.client, wallet)
+        
         return {
-        "transport_id": transport.transport_id,
-        "sell_tx_hash": offer_response.result.get("hash"),
-        "buy_tx_hash": accept_response.result.get("hash"),
-        "nft_id": token_id,
-        "price_xrp": 0,
-        "status": accept_response.status
+            "sale_id": sale.sale_id,
+            "tx_hash": response.result.get("hash"),
+            "nft_id": token_id,
+            "price_xrp": sale.price,
+            "status": response.status
         }
-    def get_batch_info(self, batch_id: str) -> List[Dict]:
-        """Retrieve complete history for a batch"""
-        try:
-            req = from_dict({
-            "method": "nft_info",
-            "params": [{
-                "nft_id": batch_id,
-                "ledger_index": "validated"
-            }]
-            })
-            response = self.client.request(req)
-            nft_details = response.result.get("nft")
-            return [nft_details] if nft_details else []
-        except Exception as e:
-            raise RuntimeError("Error retrieving NFT information") from e
+
+    # def record_check(self, wallet: Wallet, check: CheckEvent) -> dict:
+    #     """Record a check event as a payment transaction with memo"""
+    #     # Create memo data
+    #     memo_data = {
+    #         "type": "check",
+    #         "check_id": check.check_id,
+    #         "eggs": check.eggs,
+    #         "time": check.time,
+    #     }
         
+    #     # Create payment transaction with memo
+    #     payment = Payment(
+    #         account=wallet.classic_address,
+    #         destination=wallet.classic_address,
+    #         amount="1",  # Minimal amount
+    #         memos=[{"Memo": {"MemoData": json.dumps(memo_data)}}]
+    #     )
+        
+    #     # Submit payment transaction
+    #     response = xrpl.transaction.submit_and_wait(payment, self.client, wallet)
+        
+    #     return {
+    #         "check_id": check.check_id,
+    #         "tx_hash": response.result.get("hash"),
+    #         "status": response.status
+    #     }
+
     
+    def get_metadata_from_transaction(self, transaction):
+        """Retrieve metadata from transaction"""
+        uri = transaction.get("tx_json").get("URI")
+        return json.loads(hex_to_str(uri))
+
+    def make_sell_offer(self, wallet: Wallet, token_id: str, price: float) -> dict:
+        """Create a sell offer for an NFT"""
+        sell_offer = xrpl.models.transactions.NFTokenCreateOffer(
+            account=wallet.classic_address,
+            nftoken_id=token_id,
+            amount=price,
+            flags=xrpl.models.transactions.NFTokenCreateOfferFlag.TF_SELL_NFTOKEN
+        )
         
+        response = xrpl.transaction.submit_and_wait(sell_offer, self.client, wallet)
+        
+        return response.result
+    def make_buy_offer(self, wallet: Wallet, token_id: str, price: float) -> dict:
+        """Create a buy offer for an NFT"""
+        buy_offer = xrpl.models.transactions.NFTokenCreateOffer(
+            account=wallet.classic_address,
+            nftoken_id=token_id,
+            amount=price,
+            flags=xrpl.models.transactions.NFTokenCreateOfferFlag.TF_BUY_NFTOKEN
+        )
+        
+        response = xrpl.transaction.submit_and_wait(buy_offer, self.client, wallet)
+        
+        return response.result
+
+    def sell_nft(self, wallet: Wallet, buy_offer_index: int,buyer:Wallet) -> dict:
+        """Sell an NFT with a buy offer"""
+        sell_tx = xrpl.models.transactions.NFTokenAcceptOffer(
+            account=wallet.classic_address,
+            nftoken_buy_offer=buy_offer_index
+        )
+        
+        response = xrpl.transaction.submit_and_wait(sell_tx, self.client, wallet)
+        
+        return response.result
+
+
+    def get_account_transactions(self, wallet_address: str) -> list:
+        """Retrieve NFTs via standard account_nfts method"""
+
+        acct_info = AccountTx(
+            account=wallet_address,
+            ledger_index_min=-1,
+            ledger_index_max=-1,
+            limit=400,
+        )
+
+        response = self.client.request(acct_info)
+        result = response.result
+        transactions = result['transactions'][:-1] # The last transaction in the list is not relevant
+        return transactions
+    
+    def get_all_account_transactions(self):
+        """Retrieve NFTs via standard account_nfts method"""
+        all_transactions = []
+        for i, row in self.users:
+            all_transactions.extend(self.get_account_transactions(self.users.classirow['wallet']return all_transactions))
         # Query for NFT creation and all transactions
 
 
