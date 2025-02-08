@@ -167,18 +167,6 @@ class EggSupplyChain:
         uri = transaction.get("tx_json").get("URI")
         return json.loads(hex_to_str(uri))
 
-    def make_sell_offer(self, wallet: Wallet, token_id: str, price: float) -> dict:
-        """Create a sell offer for an NFT"""
-        sell_offer = xrpl.models.transactions.NFTokenCreateOffer(
-            account=wallet.classic_address,
-            nftoken_id=token_id,
-            amount=price,
-            flags=xrpl.models.transactions.NFTokenCreateOfferFlag.TF_SELL_NFTOKEN
-        )
-        
-        response = xrpl.transaction.submit_and_wait(sell_offer, self.client, wallet)
-        
-        return response.result
     
     def make_buy_offer(self, wallet: Wallet, token_id: str, price: float) -> dict:
         """Create a buy offer for an NFT"""
@@ -235,36 +223,11 @@ class EggSupplyChain:
         
         if broker_response.status == "success":
             # Record the successful sale event
-            token_id = "nft123"  # Replace with actual token ID from the response if available.
+            token_id = get_nftoken_id(broker_response)
             return self.record_sale(buyer_wallet, sale_event, token_id)
         
         return {"error": f"Failed to accept buy offer. Status: {broker_response.status}"}
 
-    def accept_sell_offer(self, buyer_wallet: Wallet, seller_wallet: Wallet, sell_offer_index: int):
-        """Accept an existing sell offer"""
-        # Extract necessary details for the SaleEvent (mock data used here for example purposes)
-        sale_event = SaleEvent(
-            sale_id="sale124",
-            batch_id="batch457",
-            price=100.0,  # Example price in XRP
-            quantity=1,
-            start_eggs=10,
-            start_location="Farm A",
-            end_location="Farm B",
-            seller=seller_wallet.classic_address,
-            buyer=buyer_wallet.classic_address
-        )
-        
-        # Broker the sale (no broker fee in this example)
-        broker_fee = "0"  # No fee for simplicity; adjust as needed.
-        broker_response = self.broker_sale(sell_offer_index, None, None, broker_fee)  # Replace None with actual buy_offer_index
-        
-        if broker_response.status == "success":
-            # Record the successful sale event
-            token_id = "nft124"  # Replace with actual token ID from the response if available.
-            return self.record_sale(seller_wallet, sale_event, token_id)
-        
-        return {"error": f"Failed to accept sell offer. Status: {broker_response.status}"}
 
     def get_account_transactions(self, wallet_address: str) -> list:
         """Retrieve NFTs via standard account_nfts method"""
